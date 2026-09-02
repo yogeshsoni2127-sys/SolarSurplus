@@ -24,6 +24,8 @@ const ForecastChart = lazy(() => import('./components/ForecastChart'));
 const SurplusTimeline = lazy(() => import('./components/SurplusTimeline'));
 const GridExportCard = lazy(() => import('./components/GridExportCard'));
 const SavingsCard = lazy(() => import('./components/SavingsCard'));
+const RainyAlertCard = lazy(() => import('./components/RainyAlertCard'));
+const EvScheduler = lazy(() => import('./components/EvScheduler'));
 
 const ChartSuspense = () => (
   <div className="chart-suspense">
@@ -284,6 +286,12 @@ export default function App() {
 
                 <StatCards summary={predictions.daily_summary} />
 
+                <div style={{ marginTop: 24 }}>
+                  <Suspense fallback={null}>
+                    <RainyAlertCard hourly={predictions.hourly_forecast} />
+                  </Suspense>
+                </div>
+
                 {predictions.daily_summary && (
                   <div style={{ marginTop: 24, display: 'grid', gap: 24, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
                     <Suspense fallback={<ChartSuspense />}>
@@ -327,6 +335,12 @@ export default function App() {
                 <div className="grid-2" style={{ marginTop: 24 }}>
                   <WeatherPanel weatherData={predictions.hourly_forecast} dataSource={predictions.weather_data_source} />
                   <Recommendations recommendations={predictions.recommendations} />
+                </div>
+
+                <div style={{ marginTop: 24 }}>
+                  <Suspense fallback={null}>
+                    <EvScheduler hourly={predictions.hourly_forecast} />
+                  </Suspense>
                 </div>
               </>
             ) : (
