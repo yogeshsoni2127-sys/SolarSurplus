@@ -1,10 +1,22 @@
 import { useState, useEffect } from 'react';
 import {
   Sun, Battery, MapPin, Calendar, Gauge,
-  Zap, ArrowRight, Loader2, Search, Check, Compass
+  Zap, ArrowRight, Loader2, Search, Check, Compass, Activity
 } from 'lucide-react';
 import { reverseGeocode, formatLocationName } from '../services/geo';
-import { useI18n } from '../i18n';
+import { useI18n, f } from '../i18n';
+
+// Hourly consumption weights (hours 0-23) matching the backend
+// CONSUMPTION_PROFILES in battery_optimizer.py. Used for the live
+// load-shape preview so the user sees what they're selecting.
+const PROFILE_WEIGHTS = {
+  default: [0.02,0.02,0.02,0.02,0.02,0.03,0.05,0.06,0.06,0.05,0.04,0.04,0.04,0.04,0.04,0.04,0.05,0.06,0.07,0.07,0.06,0.05,0.04,0.03],
+  working_9_5: [0.015,0.014,0.013,0.012,0.013,0.02,0.045,0.054,0.04,0.025,0.022,0.02,0.02,0.02,0.02,0.02,0.03,0.06,0.098,0.092,0.075,0.05,0.03,0.02],
+  home_all_day: [0.035,0.032,0.03,0.028,0.03,0.035,0.05,0.06,0.055,0.05,0.045,0.045,0.045,0.045,0.045,0.045,0.05,0.06,0.065,0.06,0.05,0.04,0.035,0.03],
+  night_shift: [0.045,0.05,0.055,0.06,0.055,0.045,0.04,0.035,0.03,0.025,0.025,0.03,0.035,0.035,0.04,0.04,0.045,0.05,0.05,0.045,0.04,0.04,0.045,0.05],
+  ac_heavy: [0.015,0.014,0.013,0.012,0.013,0.015,0.04,0.045,0.04,0.035,0.04,0.05,0.06,0.065,0.07,0.075,0.08,0.085,0.085,0.075,0.06,0.045,0.03,0.02],
+  elderly_home: [0.02,0.02,0.02,0.02,0.02,0.03,0.05,0.06,0.06,0.06,0.05,0.045,0.04,0.04,0.04,0.04,0.05,0.06,0.07,0.07,0.06,0.05,0.04,0.03],
+};
 
 const DEFAULT_VALUES = {
   solar_panel_capacity_kw: 5,
@@ -17,13 +29,37 @@ const DEFAULT_VALUES = {
   avg_daily_consumption_kwh: 15,
   tilt_deg: 30,
   azimuth_deg: 180,
+  consumer_profile: 'default',
 };
+
+// Preset daily-usage tiers in kWh/day — the label text carries the kWh
+// estimate, the `value` carries the number that goes to the API.
+const CONS_OPTIONS = [
+  { value: 5, key: 'form.opt.minimal' },
+  { value: 10, key: 'form.opt.small' },
+  { value: 15, key: 'form.opt.medium' },
+  { value: 25, key: 'form.opt.large' },
+  { value: 40, key: 'form.opt.xlarge' },
+];
+
+const DIR_OPTIONS = [
+  { value: 0, key: 'form.dir.N' },
+  { value: 45, key: 'form.dir.NE' },
+  { value: 90, key: 'form.dir.E' },
+  { value: 135, key: 'form.dir.SE' },
+  { value: 180, key: 'form.dir.S.best' },
+  { value: 225, key: 'form.dir.SW' },
+  { value: 270, key: 'form.dir.W' },
+  { value: 315, key: 'form.dir.NW' },
+];
 
 export default function InputForm({ onSubmit, loading }) {
   const { t } = useI18n();
   const [form, setForm] = useState(DEFAULT_VALUES);
   const [geoStatus, setGeoStatus] = useState('idle'); // 'detecting' | 'success' | 'failed' | 'idle'
   const [cityName, setCityName] = useState('Prayagraj, UP');
+  const [customMode, setCustomMode] = useState(false);
+  const [customValue, setCustomValue] = useState('');
   const [citySearchQuery, setCitySearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -113,8 +149,11 @@ export default function InputForm({ onSubmit, loading }) {
     
     // Parse values to floats on submit to avoid 0 sticking in inputs
     const parsedForm = { ...form, city: cityName };
+    if (customMode) {
+      parsedForm.avg_daily_consumption_kwh = parseFloat(customValue);
+    }
     for (let k in parsedForm) {
-      if (k !== 'latitude' && k !== 'longitude' && k !== 'avg_daily_consumption_kwh' && k !== 'city') {
+      if (k !== 'latitude' && k !== 'longitude' && k !== 'avg_daily_consumption_kwh' && k !== 'consumer_profile' && k !== 'city') {
         parsedForm[k] = parsedForm[k] === '' ? 0 : parseFloat(parsedForm[k]) || 0;
       }
     }
@@ -226,18 +265,36 @@ export default function InputForm({ onSubmit, loading }) {
             </label>
             <select
               className="form-input"
-              value={form.avg_daily_consumption_kwh}
-              onChange={(e) => handleChange('avg_daily_consumption_kwh', parseFloat(e.target.value))}
-              required
+              value={customMode ? '' : form.avg_daily_consumption_kwh}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === '') { setCustomMode(true); return; }
+                setCustomMode(false);
+                handleChange('avg_daily_consumption_kwh', parseFloat(v) || 0);
+              }}
+              required={!customMode}
             >
-              {t('form.selectsize')}
-              {t('form.opt.minimal')}
-              {t('form.opt.small')}
-              {t('form.opt.medium')}
-              {t('form.opt.large')}
-              {t('form.opt.xlarge')}
+              <option value="" disabled hidden>{t('form.selectsize')}</option>
+              {CONS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{f(t(o.key))}</option>
+              ))}
+              <option value="">{t('form.opt.custom')}</option>
             </select>
-            {t('form.dailyuse.help')}
+            {customMode && (
+              <input
+                type="number"
+                className="form-input"
+                style={{ marginTop: 8 }}
+                value={customValue}
+                onChange={(e) => setCustomValue(e.target.value)}
+                onWheel={(e) => e.target.blur()}
+                placeholder={t('form.customuse.placeholder')}
+                min="1"
+                step="0.5"
+                required
+              />
+            )}
+            <span className="form-helper">{t('form.dailyuse.help')}</span>
           </div>
 
           {/* Panel Age */}
@@ -306,17 +363,33 @@ export default function InputForm({ onSubmit, loading }) {
               value={form.azimuth_deg}
               onChange={(e) => handleChange('azimuth_deg', parseInt(e.target.value, 10))}
             >
-              {t('form.dir.N')}
-              {t('form.dir.NE')}
-              {t('form.dir.E')}
-              {t('form.dir.SE')}
-              {t('form.dir.S.best')}
-              {t('form.dir.SW')}
-              {t('form.dir.W')}
-              {t('form.dir.NW')}
+              {DIR_OPTIONS.map((d) => (
+                <option key={d.value} value={d.value}>{f(t(d.key))}</option>
+              ))}
             </select>
             <span className="form-helper">{t('form.azimuth.helper')}</span>
           </div>
+        </div>
+
+        {/* Daily Usage Pattern (lifestyle profile) */}
+        <div style={{ marginTop: 12, padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+          <div className="form-group" style={{ marginBottom: 6 }}>
+            <label className="form-label">
+              <Activity size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              {t('form.profile')}
+            </label>
+            <select
+              className="form-input"
+              value={form.consumer_profile || 'default'}
+              onChange={(e) => handleChange('consumer_profile', e.target.value)}
+            >
+              {['default', 'working_9_5', 'home_all_day', 'night_shift', 'ac_heavy', 'elderly_home'].map((p) => (
+                <option key={p} value={p}>{t(`form.profile.p.${p}`)}</option>
+              ))}
+            </select>
+            <span className="form-helper">{t('form.profile.help')}</span>
+          </div>
+          <LoadShapePreview weights={PROFILE_WEIGHTS[form.consumer_profile] || PROFILE_WEIGHTS.default} />
         </div>
 
         {/* Location Section */}
@@ -474,6 +547,46 @@ export default function InputForm({ onSubmit, loading }) {
           )}
         </button>
       </form>
+    </div>
+  );
+}
+
+// 24-bar sparkline of the selected consumption profile so the user can see
+// exactly how their load is distributed through the day.
+function LoadShapePreview({ weights }) {
+  const { t } = useI18n();
+  const max = Math.max(...weights);
+  const peakIdx = weights.indexOf(max);
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 60, paddingTop: 6 }}>
+        {weights.map((w, i) => {
+          const isPeak = i === peakIdx;
+          return (
+            <div
+              key={i}
+              title={`${String(i).padStart(2, '0')}:00 – ${Math.round(w * 100)}%`}
+              style={{
+                flex: 1,
+                height: `${(w / max) * 100}%`,
+                minHeight: 3,
+                borderRadius: '2px 2px 0 0',
+                background: isPeak ? 'var(--amber-400)' : 'rgba(245,158,11,0.55)',
+              }}
+            />
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+        {['00', '06', '12', '18', '24'].map((h) => (
+          <span key={h}>{h}:00</span>
+        ))}
+      </div>
+      {max > 0 && (
+        <div style={{ fontSize: 11, color: 'var(--amber-400)', marginTop: 4 }}>
+          {f(t('form.profile.peak'), { h: peakIdx })}
+        </div>
+      )}
     </div>
   );
 }

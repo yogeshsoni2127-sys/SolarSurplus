@@ -24,6 +24,11 @@ class UserInput(BaseModel):
     tilt_deg: float = Field(default=0, ge=0, le=90, description="Panel tilt from horizontal (°)")
     azimuth_deg: float = Field(default=180, ge=0, le=360, description="Panel azimuth from North (°; 180 = South)")
     language: str = Field(default="en", description="Output language for recommendation texts ('en' or 'hi')")
+    consumer_profile: str = Field(
+        default="default",
+        max_length=64,
+        description="Hourly consumption shape: default | working_9_5 | home_all_day | night_shift | ac_heavy | elderly_home"
+    )
     client_weather_data: Optional[dict] = Field(
         default=None,
         description="Optional pre-fetched weather data from the client to bypass backend IP rate limits"

@@ -99,3 +99,35 @@ def test_tilt_geometry_night_zeroes_irradiance():
     assert tilted["ghi"] == 0.0
     assert tilted["dni"] == 0.0
     assert tilted["dhi"] == 0.0
+
+
+def test_consumer_profiles_change_hourly_consumption_shape():
+    from app.services.battery_optimizer import calculate_battery_schedule
+
+    generation = [0.0] * 24  # flat zero generation isolates the consumption profile
+    def hourly_cons(profile):
+        res = calculate_battery_schedule(
+            hourly_generation=generation,
+            avg_daily_consumption_kwh=24.0,
+            battery_capacity_kwh=10,
+            current_charge_percent=100,
+            battery_age_years=0,
+            consumer_profile=profile,
+        )["schedule"]
+        return {e["hour_of_day"]: e["consumption_kwh"] for e in res}
+
+    worker = hourly_cons("working_9_5")
+    night = hourly_cons("night_shift")
+
+    # Daytime (12:00) consumption collapses for a 9-5 worker vs night-shift,
+    # while late evening (20:00) is the worker's peak.
+    assert worker[12] < night[12] * 0.7
+    assert worker[20] > night[20] * 1.3
+
+    # A flat default profile must still equal an exactly-normalised load.
+    default = hourly_cons("default")
+    assert sum(default.values()) == pytest.approx(24.0, abs=0.01)
+
+    # Unknown profile name falls back to the default curve, not a crash.
+    fallback = hourly_cons("not_a_real_profile")
+    assert sum(fallback.values()) == pytest.approx(24.0, abs=0.01)

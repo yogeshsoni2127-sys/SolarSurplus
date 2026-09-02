@@ -6,6 +6,54 @@ and generates usage recommendations based on forecast data.
 """
 
 
+# Named hourly consumption patterns. Each list has 24 weights (hours 0-23,
+# India local time) representing the relative draw of that hour; weights are
+# normalised to sum to 1.0 so `avg_daily_consumption_kwh` just scales them.
+CONSUMPTION_PROFILES = {
+    "default": [
+        0.02, 0.02, 0.02, 0.02, 0.02, 0.03,  # 0-5 (night)
+        0.05, 0.06, 0.06, 0.05, 0.04, 0.04,  # 6-11 (morning)
+        0.04, 0.04, 0.04, 0.04, 0.05, 0.06,  # 12-17 (afternoon)
+        0.07, 0.07, 0.06, 0.05, 0.04, 0.03,  # 18-23 (evening)
+    ],
+    "working_9_5": [
+        0.015, 0.014, 0.013, 0.012, 0.013, 0.02,  # 0-5
+        0.045, 0.054, 0.04, 0.025, 0.022, 0.02,   # 6-11 (small morning spike, out for the day)
+        0.02, 0.02, 0.02, 0.02, 0.03, 0.06,       # 12-17 (low daytime) -> evening commute
+        0.098, 0.092, 0.075, 0.05, 0.03, 0.02,    # 18-23 (steep evening peak)
+    ],
+    "home_all_day": [
+        0.035, 0.032, 0.03, 0.028, 0.03, 0.035,   # 0-5
+        0.05, 0.06, 0.055, 0.05, 0.045, 0.045,    # 6-11
+        0.045, 0.045, 0.045, 0.045, 0.05, 0.06,   # 12-17
+        0.065, 0.06, 0.05, 0.04, 0.035, 0.03,     # 18-23
+    ],
+    "night_shift": [
+        0.045, 0.05, 0.055, 0.06, 0.055, 0.045,   # 0-5 (peak at night)
+        0.04, 0.035, 0.03, 0.025, 0.025, 0.03,    # 6-11 (sleeping by day)
+        0.035, 0.035, 0.04, 0.04, 0.045, 0.05,    # 12-17
+        0.05, 0.045, 0.04, 0.04, 0.045, 0.05,     # 18-23
+    ],
+    "ac_heavy": [
+        0.015, 0.014, 0.013, 0.012, 0.013, 0.015,  # 0-5
+        0.04, 0.045, 0.04, 0.035, 0.04, 0.05,      # 6-11
+        0.06, 0.065, 0.07, 0.075, 0.08, 0.085,     # 12-17 (early-start AC, afternoon peak)
+        0.085, 0.075, 0.06, 0.045, 0.03, 0.02,     # 18-23 (evening cooling)
+    ],
+    "elderly_home": [
+        0.02, 0.02, 0.02, 0.02, 0.02, 0.03,        # 0-5
+        0.05, 0.06, 0.06, 0.06, 0.05, 0.045,       # 6-11 (early rise, midday
+        0.04, 0.04, 0.04, 0.04, 0.05, 0.06,        # 12-17
+        0.07, 0.07, 0.06, 0.05, 0.04, 0.03,        # 18-23
+    ],
+}
+
+_NORMALISED_PROFILES = {
+    key: [w / sum(weights) for w in weights]
+    for key, weights in CONSUMPTION_PROFILES.items()
+}
+
+
 def calculate_battery_schedule(
     hourly_generation: list[float],
     avg_daily_consumption_kwh: float,
@@ -13,12 +61,14 @@ def calculate_battery_schedule(
     current_charge_percent: float,
     battery_age_years: float = 0,
     language: str = "en",
+    consumer_profile: str = "default",
 ) -> dict:
     """
     Calculate optimal battery charge/discharge schedule.
 
     Logic:
-    - Distribute daily consumption across hours (weighted by typical usage pattern)
+    - Distribute daily consumption across hours using the selected
+      lifestyle profile (weights by time of day)
     - When generation > consumption → surplus → charge battery
     - When generation < consumption → deficit → discharge battery
     - Respect battery limits: min 20% SoC, max 100% SoC
@@ -29,6 +79,9 @@ def calculate_battery_schedule(
         battery_capacity_kwh: Rated battery capacity in kWh
         current_charge_percent: Current SoC (0-100%)
         battery_age_years: Battery age for degradation calculation
+        language: Output language for recommendations ('en' or 'hi')
+        consumer_profile: Which hourly consumption shape to use
+            (see CONSUMPTION_PROFILES)
 
     Returns:
         Dict with hourly schedule, summary, and recommendations
@@ -45,14 +98,9 @@ def calculate_battery_schedule(
     # Current charge in kWh
     current_charge_kwh = usable_capacity * (current_charge_percent / 100)
 
-    # Typical hourly consumption pattern (normalized to sum to 1.0)
-    # Higher in morning (6-9) and evening (17-22), lower at night
-    consumption_pattern = [
-        0.02, 0.02, 0.02, 0.02, 0.02, 0.03,  # 0-5 (night)
-        0.05, 0.06, 0.06, 0.05, 0.04, 0.04,  # 6-11 (morning)
-        0.04, 0.04, 0.04, 0.04, 0.05, 0.06,  # 12-17 (afternoon)
-        0.07, 0.07, 0.06, 0.05, 0.04, 0.03,  # 18-23 (evening)
-    ]
+    # Hourly consumption weights from the chosen lifestyle profile
+    consumption_pattern = _NORMALISED_PROFILES.get(consumer_profile) or \
+        _NORMALISED_PROFILES["default"]
 
     schedule = []
     charge_kwh = current_charge_kwh
