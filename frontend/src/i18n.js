@@ -284,6 +284,16 @@ const DICT = {
     'ev.remaining': 'Could not fully charge — {r} kWh still needed (battery charges first).',
     'ev.empty': 'No surplus hours in this forecast to charge the EV. Try again on sunnier days.',
     'ev.batteryfirst': 'SoC: the home battery is topped up first; the EV draws from leftover surplus, so no grid power is used for charging.',
+    'cal.title': 'Actual Usage Calibration',
+    'cal.sub': 'Enter your real meter use (kWh/day) and the engine self-corrects the daily consumption total — while keeping your lifestyle profile and hourly shape unchanged.',
+    'cal.placeholder': 'Actual kWh used yesterday',
+    'cal.add': 'Add',
+    'cal.samples': '{n} actual reads',
+    'cal.learnedShort': 'Learned average',
+    'cal.effective': 'Next forecast will use',
+    'cal.apply': 'Regenerate to apply',
+    'cal.reset': 'Reset learning',
+    'cal.empty': 'No actual reads yet — add your real usage to tune the estimate.',
 
     // Forecast form
     'search.placeholder': 'Search city or town (e.g. Prayagraj, Delhi, Mumbai, Bengaluru, London...)',
@@ -635,6 +645,16 @@ const DICT = {
     'ev.remaining': 'पूरी चार्ज नहीं हो सकी — {r} kWh और चाहिए (बैटरी पहले चार्ज होती है)।',
     'ev.empty': 'इस पूर्वानुमान में EV चार्ज करने के लिए अधिशेष घंटे नहीं मिले। धूप वाले दिन फिर से देखें।',
     'ev.batteryfirst': 'सोस: घर की बैटरी पहले भरी जाती है; EV बचे हुए अधिशेष से चार्ज होती है, इसलिए चार्जिंग में ग्रिड बिजली का उपयोग नहीं होता।',
+    'cal.title': 'वास्तविक उपयोग कैलिब्रेशन',
+    'cal.sub': 'अपना असली मीटर उपयोग (kWh/दिन) दर्ज करें — इंजन दैनिक खपत का कुल योग स्वयं सुधार लेगा, जबकि आपकी लाइफस्टाइल प्रोफ़ाइल और घंटे का पैटर्न वही रहेगा।',
+    'cal.placeholder': 'कल खपत किए गए kWh',
+    'cal.add': 'जोड़ें',
+    'cal.samples': '{n} वास्तविक रीडिंग',
+    'cal.learnedShort': 'सीखा गया औसत',
+    'cal.effective': 'अगला पूर्वानुमान उपयोग करेगा',
+    'cal.apply': 'लागू करने के लिए रीजनरेट करें',
+    'cal.reset': 'सीखना रीसेट करें',
+    'cal.empty': 'अभी कोई वास्तविक रीडिंग नहीं — वास्तविक उपयोग जोड़कर अनुमान सही करें।',
 
     // Forecast form
     'search.placeholder': 'शहर या कस्बा खोजें (जैसे प्रयागराज, दिल्ली, मुंबई, बेंगलुरु...)',

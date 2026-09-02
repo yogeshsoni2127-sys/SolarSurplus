@@ -4,6 +4,9 @@ import { RefreshCw, AlertTriangle, Clock } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { generateForecast, warmUpBackend } from './services/api';
 import { saveUserEntry, savePrediction, saveNotification } from './services/firebase';
+import {
+  readCalibration, addSample, resetCalibration, applyCalibration,
+} from './services/consumptionCalibration';
 import { useI18n, f } from './i18n';
 
 import Navbar from './components/Navbar';
@@ -26,6 +29,7 @@ const GridExportCard = lazy(() => import('./components/GridExportCard'));
 const SavingsCard = lazy(() => import('./components/SavingsCard'));
 const RainyAlertCard = lazy(() => import('./components/RainyAlertCard'));
 const EvScheduler = lazy(() => import('./components/EvScheduler'));
+const ConsumptionFeedback = lazy(() => import('./components/ConsumptionFeedback'));
 
 const ChartSuspense = () => (
   <div className="chart-suspense">
@@ -53,6 +57,7 @@ export default function App() {
   const [forecastLoading, setForecastLoading] = useState(false);
   const [lastInput, setLastInput] = useState(null);
   const [generatedAt, setGeneratedAt] = useState(null);
+  const [consumptionCal, setConsumptionCal] = useState(readCalibration);
 
   useEffect(() => {
     const saved = localStorage.getItem('solar_predictions');
@@ -79,7 +84,12 @@ export default function App() {
   const handleForecast = useCallback(async (formData) => {
     setForecastLoading(true);
     try {
-      const result = await generateForecast(formData);
+      // Learn the daily kWh total from real meter reads (shape stays preset).
+      const effective = {
+        ...formData,
+        avg_daily_consumption_kwh: applyCalibration(formData.avg_daily_consumption_kwh, consumptionCal),
+      };
+      const result = await generateForecast(effective);
       setPredictions(result);
       setLastInput(formData);
       setGeneratedAt(Date.now());
@@ -144,7 +154,7 @@ export default function App() {
     } finally {
       setForecastLoading(false);
     }
-  }, [user, t]);
+  }, [user, t, consumptionCal]);
 
   const handleAuth = (authUser) => {
     setShowAuth(false);
@@ -341,6 +351,18 @@ export default function App() {
                 <div style={{ marginTop: 24 }}>
                   <Suspense fallback={null}>
                     <EvScheduler hourly={predictions.hourly_forecast} />
+                  </Suspense>
+                </div>
+
+                <div style={{ marginTop: 24 }}>
+                  <Suspense fallback={null}>
+                    <ConsumptionFeedback
+                      cal={consumptionCal}
+                      baseKwh={lastInput?.avg_daily_consumption_kwh ?? 15}
+                      effectiveKwh={applyCalibration(lastInput?.avg_daily_consumption_kwh ?? 15, consumptionCal)}
+                      onAddSample={(v) => setConsumptionCal(addSample(v))}
+                      onReset={() => setConsumptionCal(resetCalibration())}
+                    />
                   </Suspense>
                 </div>
               </>
