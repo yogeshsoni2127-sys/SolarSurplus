@@ -6,6 +6,8 @@
 
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+import { batteryHealth } from './batteryHealth';
+
 const REQUEST_TIMEOUT_MS = 90000;
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
@@ -68,7 +70,13 @@ function generateClientFallbackForecast(userInput) {
   const panelDegradation = Math.max(0, 1.0 - 0.005 * panel_age_years);
   const effectivePanelKw = solar_panel_capacity_kw * panelDegradation;
 
-  const batteryDegradation = Math.max(0, 1.0 - 0.02 * battery_age_years);
+  const batteryHealthVal = batteryHealth(
+    battery_age_years,
+    userInput.battery_type,
+    userInput.drain_frequency,
+    userInput.battery_placement,
+  );
+  const batteryDegradation = batteryHealthVal.degradationFactor;
   const usableBatteryKwh = battery_capacity_kwh * batteryDegradation;
   const minChargeKwh = usableBatteryKwh * 0.2; // 20% min SoC
 
@@ -291,6 +299,10 @@ function generateClientFallbackForecast(userInput) {
       final_battery_soc_percent: +(usableBatteryKwh > 0 ? (currentChargeKwh / usableBatteryKwh) * 100 : 0).toFixed(1),
       usable_battery_capacity_kwh: +usableBatteryKwh.toFixed(2),
       battery_degradation_percent: +((1 - batteryDegradation) * 100).toFixed(1),
+      battery_health_percent: batteryHealthVal.healthPercent,
+      battery_health_temp_c: batteryHealthVal.temperatureC,
+      battery_chemistry: batteryHealthVal.chemistry,
+      battery_drain_cycles_yr: batteryHealthVal.eqCyclesPerYr,
       forecast_days: days,
     },
     recommendations: recs,

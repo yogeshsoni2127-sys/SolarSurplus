@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Sun, Battery, MapPin, Calendar, Gauge,
-  Zap, ArrowRight, Loader2, Search, Check, Compass, Activity
+  Zap, ArrowRight, Loader2, Search, Check, Compass, Activity, Home
 } from 'lucide-react';
 import { reverseGeocode, formatLocationName } from '../services/geo';
 import { useI18n, f } from '../i18n';
@@ -23,7 +23,10 @@ const DEFAULT_VALUES = {
   battery_capacity_kwh: 10,
   current_battery_charge: 50,
   panel_age_years: 2,
-  battery_age_years: 1,
+  battery_age_years: 3,
+  battery_type: 'lead_acid',
+  drain_frequency: 'moderate',
+  battery_placement: 'indoor',
   latitude: 25.4934,  // Prayagraj (sensible default)
   longitude: 81.8675,
   avg_daily_consumption_kwh: 15,
@@ -153,7 +156,7 @@ export default function InputForm({ onSubmit, loading }) {
       parsedForm.avg_daily_consumption_kwh = parseFloat(customValue);
     }
     for (let k in parsedForm) {
-      if (k !== 'latitude' && k !== 'longitude' && k !== 'avg_daily_consumption_kwh' && k !== 'consumer_profile' && k !== 'city') {
+      if (k !== 'latitude' && k !== 'longitude' && k !== 'avg_daily_consumption_kwh' && k !== 'consumer_profile' && k !== 'battery_type' && k !== 'drain_frequency' && k !== 'battery_placement' && k !== 'city') {
         parsedForm[k] = parsedForm[k] === '' ? 0 : parseFloat(parsedForm[k]) || 0;
       }
     }
@@ -315,22 +318,78 @@ export default function InputForm({ onSubmit, loading }) {
             {t('form.panelage.help')}
           </div>
 
-          {/* Battery Age */}
+          {/* Battery Type */}
+          <div className="form-group">
+            <label className="form-label">
+              <Battery size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              {t('form.batterytype')}
+            </label>
+            <select
+              className="form-input"
+              value={form.battery_type}
+              onChange={(e) => handleChange('battery_type', e.target.value)}
+            >
+              <option value="lead_acid">{t('form.batterytype.lead_acid')}</option>
+              <option value="lithium">{t('form.batterytype.lithium')}</option>
+              <option value="unknown">{t('form.batterytype.unknown')}</option>
+            </select>
+            <span className="form-helper">{t('form.batterytype.help')}</span>
+          </div>
+
+          {/* Battery Drain Frequency */}
+          <div className="form-group">
+            <label className="form-label">
+              <Zap size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              {t('form.batterydrain')}
+            </label>
+            <select
+              className="form-input"
+              value={form.drain_frequency}
+              onChange={(e) => handleChange('drain_frequency', e.target.value)}
+            >
+              <option value="heavy">{t('form.batterydrain.heavy')}</option>
+              <option value="moderate">{t('form.batterydrain.moderate')}</option>
+              <option value="light">{t('form.batterydrain.light')}</option>
+            </select>
+            <span className="form-helper">{t('form.batterydrain.help')}</span>
+          </div>
+
+          {/* Battery Health Model (Age slider) */}
           <div className="form-group">
             <label className="form-label">
               <Calendar size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
               {t('form.batteryage')}
             </label>
             <input
-              type="number"
-              className="form-input"
-              value={form.battery_age_years === 0 && form.battery_age_years !== '' ? '' : form.battery_age_years}
-              onChange={(e) => handleChange('battery_age_years', e.target.value)}
-              onWheel={(e) => e.target.blur()}
+              type="range"
+              className="form-range"
+              value={form.battery_age_years ?? 0}
+              onChange={(e) => handleChange('battery_age_years', parseFloat(e.target.value))}
               min="0"
+              max="20"
               step="0.5"
+              style={{ width: '100%' }}
             />
-            {t('form.batteryage.help')}
+            <span className="form-helper" style={{ fontSize: 14, fontWeight: 700 }}>
+              {form.battery_age_years ?? 0} {t('form.batteryage.years')}
+            </span>
+          </div>
+
+          {/* Battery Placement */}
+          <div className="form-group">
+            <label className="form-label">
+              <Home size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              {t('form.batteryplacement')}
+            </label>
+            <select
+              className="form-input"
+              value={form.battery_placement}
+              onChange={(e) => handleChange('battery_placement', e.target.value)}
+            >
+              <option value="indoor">{t('form.batteryplacement.indoor')}</option>
+              <option value="outdoor">{t('form.batteryplacement.outdoor')}</option>
+            </select>
+            <span className="form-helper">{t('form.batteryplacement.help')}</span>
           </div>
 
           {/* Panel Tilt */}

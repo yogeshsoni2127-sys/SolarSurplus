@@ -54,6 +54,81 @@ _NORMALISED_PROFILES = {
 }
 
 
+# ── Battery state-of-health model ──────────────────────────────────────
+# Health = calendar aging (time + temperature) + cycle aging
+# (cycles/yr × depth-of-discharge), chemistry aware. Degradation roughly
+# doubles every 10 °C above 25 °C (Arrhenius rule of thumb).
+BATTERY_CHEMISTRY = {
+    # cycle_life_eq: equivalent full cycles to reach 80% SOH (EOL)
+    # calendar_rate_pct_yr: % capacity lost per year from sitting at float
+    "lead_acid": {"cycle_life_eq": 1200, "calendar_rate_pct_yr": 0.025},
+    "lithium":   {"cycle_life_eq": 4500, "calendar_rate_pct_yr": 0.015},
+}
+
+BATTERY_DRAIN = {
+    # cycles_yr + typical depth-of-discharge per cycle
+    "heavy":    {"cycles_yr": 350, "dod": 0.85},
+    "moderate": {"cycles_yr": 200, "dod": 0.55},
+    "light":    {"cycles_yr": 40,  "dod": 0.30},
+}
+
+BATTERY_PLACEMENT_TEMP = {
+    "indoor":  27.5,  # shaded room ~25-30 °C
+    "outdoor": 38.0,  # exposed rooftop / balcony
+}
+
+EOL_SOH = 0.80      # end-of-life for the cycle-life model
+SOIL_FLOOR = 0.50   # never let health fall below this (battery would be replaced)
+THERMAL_REF = 25.0  # °C
+
+
+def calculate_battery_health(
+    age_years: float,
+    battery_type: str = "unknown",
+    drain_frequency: str = "moderate",
+    placement: str = "indoor",
+) -> dict:
+    """
+    Estimate battery state-of-health (%) from age, chemistry, cycling depth
+    and ambient temperature.
+
+    battery_type:  "lead_acid" (incl. tall tubular) | "lithium" | "unknown"
+    drain_frequency: "heavy" | "moderate" | "light"
+    placement:     "indoor" | "outdoor"
+
+    Returns dict with health_percent, degradation_factor (fraction of rated
+    capacity retained), plus the model factors used.
+    """
+    chem = BATTERY_CHEMISTRY.get(battery_type)
+    if chem is None:
+        chem = BATTERY_CHEMISTRY["lead_acid"]  # conservative for "unknown"
+    drain = BATTERY_DRAIN.get(drain_frequency, BATTERY_DRAIN["moderate"])
+    temp_c = BATTERY_PLACEMENT_TEMP.get(placement, BATTERY_PLACEMENT_TEMP["indoor"])
+
+    temp_factor = 2.0 ** ((temp_c - THERMAL_REF) / 10.0)
+
+    eq_cycles_yr = drain["cycles_yr"] * (drain["dod"] ** 1.1)
+    cycle_loss_yr = eq_cycles_yr * (1.0 - EOL_SOH) / chem["cycle_life_eq"]
+    cal_loss_yr = chem["calendar_rate_pct_yr"]
+
+    annual_loss = (cycle_loss_yr + cal_loss_yr) * temp_factor
+    total_loss = annual_loss * max(0.0, age_years)
+
+    health = max(SOIL_FLOOR, min(1.0, 1.0 - total_loss))
+
+    return {
+        "health_percent": round(health * 100, 1),
+        "degradation_factor": round(health, 4),
+        "temperature_c": round(temp_c, 1),
+        "temp_factor": round(temp_factor, 2),
+        "eq_cycles_per_yr": round(eq_cycles_yr, 1),
+        "cycle_loss_per_yr": round(cycle_loss_yr, 5),
+        "calendar_loss_per_yr": round(cal_loss_yr, 5),
+        "annual_loss": round(annual_loss, 5),
+        "chemistry": "lithium" if battery_type == "lithium" else "lead_acid",
+    }
+
+
 def calculate_battery_schedule(
     hourly_generation: list[float],
     avg_daily_consumption_kwh: float,
@@ -62,6 +137,9 @@ def calculate_battery_schedule(
     battery_age_years: float = 0,
     language: str = "en",
     consumer_profile: str = "default",
+    battery_type: str = "unknown",
+    drain_frequency: str = "moderate",
+    battery_placement: str = "indoor",
 ) -> dict:
     """
     Calculate optimal battery charge/discharge schedule.
@@ -82,12 +160,18 @@ def calculate_battery_schedule(
         language: Output language for recommendations ('en' or 'hi')
         consumer_profile: Which hourly consumption shape to use
             (see CONSUMPTION_PROFILES)
+        battery_type: Chemistry ("lead_acid" | "lithium" | "unknown")
+        drain_frequency: Cycling load ("heavy" | "moderate" | "light")
+        battery_placement: Ambient heat ("indoor" | "outdoor")
 
     Returns:
         Dict with hourly schedule, summary, and recommendations
     """
-    # Battery degradation: 2% capacity loss per year
-    degradation_factor = max(0.0, 1.0 - 0.02 * battery_age_years)
+    # Battery state-of-health from age + chemistry + cycling depth + heat.
+    health = calculate_battery_health(
+        battery_age_years, battery_type, drain_frequency, battery_placement,
+    )
+    degradation_factor = health["degradation_factor"]
     usable_capacity = battery_capacity_kwh * degradation_factor
 
     # Minimum SoC to preserve battery health
@@ -179,7 +263,7 @@ def calculate_battery_schedule(
         schedule, total_surplus, total_deficit,
         total_generated, total_consumed,
         usable_capacity, charge_kwh, num_days,
-        total_grid_export, language,
+        total_grid_export, language, health["health_percent"],
     )
 
     # Daily summary
@@ -198,6 +282,10 @@ def calculate_battery_schedule(
         ),
         "usable_battery_capacity_kwh": round(usable_capacity, 2),
         "battery_degradation_percent": round((1 - degradation_factor) * 100, 1),
+        "battery_health_percent": health["health_percent"],
+        "battery_health_temp_c": health["temperature_c"],
+        "battery_chemistry": health["chemistry"],
+        "battery_drain_cycles_yr": health["eq_cycles_per_yr"],
         "forecast_days": round(num_days, 1),
     }
 
@@ -219,6 +307,7 @@ def _generate_recommendations(
     num_days: float,
     total_grid_export: float = 0.0,
     language: str = "en",
+    battery_health_pct: float = 100.0,
 ) -> list[str]:
     """Generate actionable recommendations based on forecast. Supports hi/en."""
     hi = language.lower() == "hi"
@@ -327,6 +416,32 @@ def _generate_recommendations(
                 f"🔌 You have ~{daily_export:.1f} kWh/day of exportable surplus "
                 f"(≈₹{daily_export * 30 * 3.0:.0f}/month at ₹3.00/kWh). "
                 "Enroll in net metering under PM Surya Ghar to earn from it."
+            )
+
+    # Battery state-of-health advice
+    if battery_health_pct < 70:
+        if hi:
+            recs.append(
+                f"🪫 आपकी बैटरी का स्वास्थ्य ~{battery_health_pct:.0f}% रह गया है। "
+                "चक्रों की गहराई घटाएँ (डीप डिस्चार्ज से बचें) और गर्मी से दूर रखें; "
+                "यदि स्वास्थ्य 70% से नीचे है तो बैटरी बदलने पर विचार करें।"
+            )
+        else:
+            recs.append(
+                f"🪫 Battery state-of-health is down to ~{battery_health_pct:.0f}%. "
+                "Avoid deep discharges and keep it out of direct heat; "
+                "consider replacement once health falls below 70%."
+            )
+    elif battery_health_pct >= 92:
+        if hi:
+            recs.append(
+                f"🟢 बैटरी स्वास्थ्य ~{battery_health_pct:.0f}% — उत्कृष्ट। "
+                "वर्तमान चार्जिंग प्रोफ़ाइल जारी रखें।"
+            )
+        else:
+            recs.append(
+                f"🟢 Battery health ~{battery_health_pct:.0f}% — excellent. "
+                "Keep up the current charging profile."
             )
 
     return recs

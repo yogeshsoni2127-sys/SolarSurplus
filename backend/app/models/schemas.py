@@ -14,6 +14,18 @@ class UserInput(BaseModel):
     )
     panel_age_years: float = Field(default=0, ge=0, description="Age of solar panels in years")
     battery_age_years: float = Field(default=0, ge=0, description="Age of battery in years")
+    battery_type: str = Field(
+        default="unknown", max_length=32,
+        description="Battery chemistry: lead_acid | lithium | unknown"
+    )
+    drain_frequency: str = Field(
+        default="moderate", max_length=32,
+        description="How deeply the battery is cycled: heavy | moderate | light"
+    )
+    battery_placement: str = Field(
+        default="indoor", max_length=32,
+        description="Ambient heat exposure: indoor | outdoor"
+    )
     latitude: float = Field(..., ge=-90, le=90, description="Location latitude")
     longitude: float = Field(..., ge=-180, le=180, description="Location longitude")
     avg_daily_consumption_kwh: float = Field(

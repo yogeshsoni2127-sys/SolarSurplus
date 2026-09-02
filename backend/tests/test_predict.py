@@ -131,3 +131,43 @@ def test_consumer_profiles_change_hourly_consumption_shape():
     # Unknown profile name falls back to the default curve, not a crash.
     fallback = hourly_cons("not_a_real_profile")
     assert sum(fallback.values()) == pytest.approx(24.0, abs=0.01)
+
+
+def test_battery_health_model_chemistry_depth_and_heat():
+    from app.services.battery_optimizer import calculate_battery_health
+
+    def h(**kw):
+        return calculate_battery_health(
+            battery_type=kw.get("type", "lead_acid"),
+            drain_frequency=kw.get("drain", "moderate"),
+            placement=kw.get("place", "indoor"),
+            age_years=kw.get("age", 3),
+        )
+
+    # Lithium chemistry outlives lead-acid under the same conditions
+    assert h(type="lithium")["health_percent"] > h(type="lead_acid")["health_percent"]
+    # Heavy cycling ages a battery faster than light cycling
+    assert h(drain="heavy")["health_percent"] < h(drain="light")["health_percent"]
+    # Outdoor heat ages faster than a shaded indoor room
+    assert h(place="outdoor")["health_percent"] < h(place="indoor")["health_percent"]
+    # Older batteries are less healthy
+    assert h(age=1)["health_percent"] > h(age=10)["health_percent"]
+    # Unknown chemistry defaults conservatively to lead-acid behaviour
+    assert h(type="unknown") == h(type="lead_acid")
+    # Health is bounded, never below the 50% floor
+    assert 50.0 <= h(age=20, drain="heavy", place="outdoor")["health_percent"] <= 100.0
+
+
+def test_forecast_exposes_battery_health_fields():
+    client = TestClient(app)
+    body = dict(_BASE)
+    body["client_weather_data"] = _synthetic_weather()
+    body["battery_type"] = "lithium"
+    body["drain_frequency"] = "light"
+    body["battery_placement"] = "indoor"
+    resp = client.post("/api/predict/forecast", json=body)
+    assert resp.status_code == 200
+    summary = resp.json()["daily_summary"]
+    assert 0 < summary["battery_health_percent"] <= 100
+    assert summary["battery_chemistry"] == "lithium"
+    assert summary["usable_battery_capacity_kwh"] <= body["battery_capacity_kwh"]

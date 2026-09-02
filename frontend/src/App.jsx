@@ -329,6 +329,7 @@ export default function App() {
                     capacityKwh={predictions.daily_summary?.usable_battery_capacity_kwh || 10}
                     chargeKwh={latestBattery?.battery_charge_kwh || 5}
                     socHistory={batteryHistory}
+                    health={predictions.daily_summary?.battery_health_percent}
                   />
                 </div>
 

@@ -41,7 +41,7 @@ function Sparkline({ data, color }) {
   );
 }
 
-export default function BatteryStatus({ soc = 50, action = 'idle', capacityKwh = 10, chargeKwh = 5, socHistory = [] }) {
+export default function BatteryStatus({ soc = 50, action = 'idle', capacityKwh = 10, chargeKwh = 5, socHistory = [], health = 100 }) {
   const { t } = useI18n();
   const ACTION_STYLES = makeStyles(t);
   const [displaySoc, setDisplaySoc] = useState(soc);
@@ -76,6 +76,7 @@ export default function BatteryStatus({ soc = 50, action = 'idle', capacityKwh =
   const BatteryIcon = isLow ? BatteryLow : soc < 60 ? BatteryMedium : BatteryFull;
   const batteryPercent = Math.min(100, Math.max(2, clampedSoc));
   const last24 = socHistory.length ? socHistory : [];
+  const healthColor = health >= 92 ? '#10B981' : health >= 70 ? '#F59E0B' : '#EF4444';
 
   return (
     <div className="glass-card battery-card">
@@ -155,6 +156,13 @@ export default function BatteryStatus({ soc = 50, action = 'idle', capacityKwh =
           <status.Icon size={15} style={{ color: status.color }} />
           <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t('battery.action')}</div>
           <div style={{ fontSize: 15, fontWeight: 700, color: status.color }}>{status.label}</div>
+        </div>
+        <div className="battery-flow-item">
+          <Activity size={12} style={{ color: healthColor }} />
+          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t('battery.health')}</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: healthColor }}>
+            {Number.isFinite(health) && health > 0 ? `${Math.round(health)}%` : '--'}
+          </div>
         </div>
       </div>
     </div>
