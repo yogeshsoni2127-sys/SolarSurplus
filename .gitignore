@@ -28,3 +28,6 @@ ml/results/*.png
 .idea/
 *.swp
 .DS_Store
+
+# Firebase deploy cache
+frontend/.firebase/
